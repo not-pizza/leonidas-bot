@@ -20,6 +20,14 @@ fn openai_token() -> Option<String> {
     None
 }
 
+pub fn video_id(url: &str) -> Option<String> {
+    regex::Regex::new(r"(?:https://www\.youtube\.com/watch\?v=|https://youtu\.be/|https://www.youtube.com/shorts/)(?P<id>[a-zA-Z0-9_-]+).*")
+                    .unwrap()
+                    .captures(url)
+                    .and_then(|captures| captures.name("id"))
+                    .map(|id| id.as_str().to_string())
+}
+
 #[derive(Deserialize)]
 struct TranscriptItem {
     text: String,
@@ -211,16 +219,19 @@ async fn summarize(
     chat(chat_api_request).await
 }
 
-pub async fn get_video_summary(video_id: &str) -> Result<String, String> {
+pub async fn get_video_summary(video_id: &str) -> Result<(String, VideoInfo), String> {
     let info = get_video_info(video_id).await.map_err(|e| e.to_string())?;
     let transcript = get_transcript(video_id).await?;
-    let summary = summarize(transcript, Some(info.title), Some(info.channel_name)).await?;
-    if summary.len() > 4096 {
-        Ok(format!(
-            "{}...",
-            summary.chars().take(4093).collect::<String>()
-        ))
+    let summary = summarize(
+        transcript,
+        Some(info.title.clone()),
+        Some(info.channel_name.clone()),
+    )
+    .await?;
+    let clipped_summary = if summary.len() > 4096 {
+        format!("{}...", summary.chars().take(4093).collect::<String>())
     } else {
-        Ok(summary)
-    }
+        summary
+    };
+    Ok((clipped_summary, info))
 }

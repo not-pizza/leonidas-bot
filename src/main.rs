@@ -28,13 +28,7 @@ impl EventHandler for Handler {
             .links(&msg.content)
             .filter(|link| link.kind() == &LinkKind::Url)
             // get the ids of youtube videos linked in the message
-            .filter_map(|url| {
-                regex::Regex::new(r"(?:https://www\.youtube\.com/watch\?v=|https://youtu\.be/)(?P<id>[a-zA-Z0-9_-]+).*")
-                    .unwrap()
-                    .captures(url.as_str())
-                    .and_then(|captures| captures.name("id"))
-                    .map(|id| id.as_str())
-            })
+            .filter_map(|url| youtube::video_id(url.as_str()))
             .collect();
 
         if !video_ids.is_empty() {
@@ -44,12 +38,17 @@ impl EventHandler for Handler {
             // description of it.
 
             for video_id in video_ids {
-                match youtube::get_video_summary(video_id).await {
-                    Ok(summary) => {
+                let typing = msg.channel_id.start_typing(&ctx.http);
+                match youtube::get_video_summary(&video_id).await {
+                    Ok((summary, info)) => {
                         if let Err(why) = msg
                             .channel_id
                             .send_message(&ctx.http, |m| {
-                                m.embed(|e| e.title("TL;DW").description(summary))
+                                m.embed(|e| {
+                                    e.title(info.title)
+                                        .description(summary)
+                                        .footer(|f| f.text(info.channel_name))
+                                })
                             })
                             .await
                         {
@@ -66,6 +65,7 @@ impl EventHandler for Handler {
                         }
                     }
                 }
+                let _ = typing.map(|typing| typing.stop());
             }
         }
     }

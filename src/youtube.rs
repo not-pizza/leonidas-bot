@@ -31,7 +31,9 @@ pub fn video_id(url: &str) -> Option<String> {
 #[derive(Deserialize)]
 struct TranscriptItem {
     text: String,
+    #[allow(dead_code)]
     start: f64,
+    #[allow(dead_code)]
     duration: f64,
 }
 
@@ -161,12 +163,12 @@ async fn chat(chat_api_request: ChatApiRequest) -> Result<String, String> {
         if let Some(first_choice) = data.choices.get(0) {
             Ok(first_choice.message.content.clone())
         } else {
-            Err(format!("No choices in response"))
+            Err("No choices in response".to_string())
         }
     }
     match chat_once(chat_api_request.clone()).await {
         Ok(response) => Ok(response),
-        Err(e) => {
+        Err(_e) => {
             // Try again in one minute
             tokio::time::sleep(Duration::from_secs(60)).await;
             chat_once(chat_api_request).await

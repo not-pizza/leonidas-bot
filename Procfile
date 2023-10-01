@@ -1,1 +1,1 @@
-web: ./target/release/leonidas
+worker: ./target/release/leonidas

@@ -22,7 +22,7 @@ pub(crate) fn summarize(
         openai::ChatMessage {
             role: "user",
             content: format!(
-                "{title}{channel}\n\nTranscript: {raw_transcript}\n\n\nClean up the transcript above, fixing punctuation, transcription errors, and improperly separated speakers. Use full markdown syntax, and break it into paragraphs. Emphasize the most important information in **bold**.",
+                "{title}{channel}\n\nTranscript: {raw_transcript}\n\n\nClean up the transcript above, fixing punctuation, transcription errors, and improperly separated speakers. Use full markdown syntax, and break it into paragraphs. Emphasize the most important information in **bold**. Just return the summary without repeating the Title or Channel, and don't write `Summary:`",
                 title=title.map(|title| format!("Title: {title}")).unwrap_or_default(),
                 channel=channel_name.clone().map(|channel_name| format!("\nChannel: {channel_name}")).unwrap_or_default(),
             ),

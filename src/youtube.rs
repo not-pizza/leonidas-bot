@@ -146,7 +146,7 @@ async fn summarize(
 ) -> Result<String, String> {
     let (messages, tokens) = prompts::summarize(raw_transcript, title, channel_name)?;
 
-    let model = if tokens > 13_000 {
+    let model = if tokens > 10_000 {
         return Err(format!(
             "Transcript too long to summarize. ({} tokens)",
             tokens
@@ -189,10 +189,22 @@ async fn clean_transcript(
     Ok(transcript.join(" "))
 }
 
-pub async fn get_video_summary(video_id: &str) -> Result<(String, VideoInfo), String> {
+pub async fn get_video_transcript(video_id: &str) -> Result<(String, VideoInfo), String> {
     let info = get_video_info(video_id).await.map_err(|e| e.to_string())?;
     let transcript = get_transcript(video_id).await?;
     let summary = clean_transcript(
+        transcript,
+        Some(info.title.clone()),
+        Some(info.channel_name.clone()),
+    )
+    .await?;
+    Ok((summary, info))
+}
+
+pub async fn get_video_summary(video_id: &str) -> Result<(String, VideoInfo), String> {
+    let info = get_video_info(video_id).await.map_err(|e| e.to_string())?;
+    let transcript = get_transcript(video_id).await?;
+    let summary = summarize(
         transcript,
         Some(info.title.clone()),
         Some(info.channel_name.clone()),

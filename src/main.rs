@@ -2,38 +2,34 @@
 
 mod openai;
 mod prompts;
+mod utils;
 mod youtube;
 
 use std::env;
 
 use dotenv::dotenv;
 use linkify::{LinkFinder, LinkKind};
+use serenity::all::{ChannelId, ReactionType};
 use serenity::async_trait;
-use serenity::model::channel::Message;
+use serenity::builder::{CreateEmbed, CreateEmbedFooter, CreateMessage};
+use serenity::model::channel::{Message, Reaction};
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 
 struct Handler;
 
+const TRANSCRIBE_EMOJI: &str = "📜";
+const SUMMARIZE_EMOJI: &str = "💭";
+
 #[async_trait]
 impl EventHandler for Handler {
-    // Set a handler for the `message` event - so that whenever a new message
-    // is received - the closure (or function) passed will be called.
-    //
-    // Event handlers are dispatched through a threadpool, and so multiple
-    // events can be dispatched simultaneously.
     async fn message(&self, ctx: Context, msg: Message) {
         // make sure the message isn't from a bot
         if msg.author.bot {
             return;
         }
 
-        let video_ids: Vec<_> = LinkFinder::new()
-            .links(&msg.content)
-            .filter(|link| link.kind() == &LinkKind::Url)
-            // get the ids of youtube videos linked in the message
-            .filter_map(|url| youtube::video_id(url.as_str()))
-            .collect();
+        let video_ids = video_ids_for_message(&msg);
 
         if !video_ids.is_empty() {
             // Sending a message can fail, due to a network error, an
@@ -41,46 +37,44 @@ impl EventHandler for Handler {
             // channel, so log to stdout when some error happens, with a
             // description of it.
 
-            for video_id in video_ids {
-                let typing = msg.channel_id.start_typing(&ctx.http);
-                match youtube::get_video_summary(&video_id).await {
-                    Ok((summary, info)) => {
-                        let summary_chunks = break_text_into_chunks(summary, 4096);
-                        let num_chunks = summary_chunks.len();
-                        for (index, summary_chunk) in summary_chunks.into_iter().enumerate() {
-                            let part = if num_chunks != 1 {
-                                format!(" (part {}/{})", index + 1, num_chunks)
-                            } else {
-                                String::new()
-                            };
-                            if let Err(why) = msg
-                                .channel_id
-                                .send_message(&ctx.http, |m| {
-                                    m.embed(|e| {
-                                        e.title(format!("{}{part}", info.title.clone()))
-                                            .description(summary_chunk)
-                                            .footer(|f| f.text(info.channel_name.clone()))
-                                    })
-                                })
-                                .await
-                            {
-                                println!("Error sending message: {:?}", why);
-                            }
-                        }
-                    }
-                    Err(why) => {
-                        if let Err(why) = msg
-                            .channel_id
-                            .say(&ctx.http, format!("Summary error: {why:?}"))
-                            .await
-                        {
-                            println!("Error sending message: {:?}", why);
-                        }
-                    }
-                }
-                let _ = typing.map(|typing| typing.stop());
-            }
+            msg.react(
+                &ctx.http,
+                ReactionType::Unicode(SUMMARIZE_EMOJI.to_string()),
+            )
+            .await
+            .unwrap();
+
+            msg.react(
+                &ctx.http,
+                ReactionType::Unicode(TRANSCRIBE_EMOJI.to_string()),
+            )
+            .await
+            .unwrap();
         }
+    }
+
+    async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
+        enum Action {
+            Transcribe,
+            Summarize,
+        }
+        if reaction
+            .member
+            .as_ref()
+            .map(|user| user.user.bot)
+            .unwrap_or(true)
+        {
+            return;
+        }
+        if reaction.emoji.unicode_eq(TRANSCRIBE_EMOJI) {
+            if let Ok(message) = reaction.message(&ctx.http).await {
+                transcribe_videos(ctx, &message).await;
+            }
+        } else if reaction.emoji.unicode_eq(SUMMARIZE_EMOJI) {
+            if let Ok(message) = reaction.message(&ctx.http).await {
+                summarize_videos(ctx, &message).await;
+            }
+        };
     }
 
     // Set a handler to be called on the `ready` event. This is called when a
@@ -103,6 +97,85 @@ fn discord_token() -> Option<String> {
     None
 }
 
+fn video_ids_for_message(msg: &Message) -> Vec<String> {
+    LinkFinder::new()
+        .links(&msg.content)
+        .filter(|link| link.kind() == &LinkKind::Url)
+        // get the ids of youtube videos linked in the message
+        .filter_map(|url| youtube::video_id(url.as_str()))
+        .collect()
+}
+
+async fn send_video_description(
+    ctx: &Context,
+    content: String,
+    info: youtube::VideoInfo,
+    channel_id: ChannelId,
+) {
+    let summary_chunks = utils::break_text_into_chunks(content, 4096);
+    let num_chunks = summary_chunks.len();
+    for (index, summary_chunk) in summary_chunks.into_iter().enumerate() {
+        let part = if num_chunks != 1 {
+            format!(" (part {}/{})", index + 1, num_chunks)
+        } else {
+            String::new()
+        };
+
+        let embed = CreateEmbed::new()
+            .title(format!("{}{part}", info.title.clone()))
+            .description(summary_chunk)
+            .footer(CreateEmbedFooter::new(info.channel_name.clone()));
+        let message = CreateMessage::new().embed(embed);
+        if let Err(why) = channel_id.send_message(&ctx.http, message).await {
+            println!("Error sending message: {:?}", why);
+        }
+    }
+}
+
+async fn summarize_videos(ctx: Context, msg: &Message) {
+    let video_ids = video_ids_for_message(msg);
+    for video_id in video_ids {
+        let typing = msg.channel_id.start_typing(&ctx.http);
+        match youtube::get_video_summary(&video_id).await {
+            Ok((summary, info)) => {
+                send_video_description(&ctx, summary, info, msg.channel_id).await;
+            }
+            Err(why) => {
+                if let Err(why) = msg
+                    .channel_id
+                    .say(&ctx.http, format!("Summary error: {why:?}"))
+                    .await
+                {
+                    println!("Error sending message: {:?}", why);
+                }
+            }
+        }
+        let _ = typing.stop();
+    }
+}
+
+async fn transcribe_videos(ctx: Context, msg: &Message) {
+    let video_ids = video_ids_for_message(msg);
+    for video_id in video_ids {
+        let typing = msg.channel_id.start_typing(&ctx.http);
+        match youtube::get_video_transcript(&video_id).await {
+            Ok((summary, info)) => {
+                send_video_description(&ctx, summary, info, msg.channel_id).await;
+            }
+            Err(why) => {
+                if let Err(why) = msg
+                    .channel_id
+                    .say(&ctx.http, format!("Transcription error: {why:?}"))
+                    .await
+                {
+                    println!("Error sending message: {:?}", why);
+                }
+            }
+        }
+        let _ = typing.stop();
+    }
+}
+
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -112,7 +185,8 @@ async fn main() {
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
+        | GatewayIntents::MESSAGE_CONTENT
+        | GatewayIntents::GUILD_MESSAGE_REACTIONS;
 
     // Create a new instance of the Client, logging in as a bot. This will
     // automatically prepend your bot token with "Bot ", which is a requirement
@@ -129,47 +203,4 @@ async fn main() {
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
     }
-}
-
-fn break_text_into_chunks(s: String, max_characters_per_chunk: usize) -> Vec<String> {
-    let mut chunks = Vec::new();
-    let mut current_chunk = String::new();
-
-    let paragraphs = s
-        .split("\n")
-        .map(|paragraph| paragraph.trim())
-        .intersperse("\n\n")
-        .flat_map(|paragraph| {
-            if paragraph.chars().count() <= max_characters_per_chunk {
-                vec![paragraph]
-            } else {
-                paragraph.split(" ").collect::<Vec<_>>()
-            }
-        })
-        .collect::<Vec<_>>();
-
-    for paragraph in paragraphs {
-        // If we can't add the current paragraph to the current chunk, push the current chunk and start a new one
-        if !current_chunk.is_empty()
-            && current_chunk.chars().count() + paragraph.chars().count() > max_characters_per_chunk
-        {
-            chunks.push(current_chunk.trim().to_string());
-            current_chunk = String::new();
-        }
-
-        // If we can add the current paragraph to the current chunk, do so
-        current_chunk.push_str(&paragraph);
-    }
-    chunks.push(current_chunk);
-
-    // Use regular expressions to find groups of newlines, and replace them all with 2 newlines
-    chunks = {
-        let re = regex::Regex::new(r"\n{3,}").unwrap();
-        chunks
-            .iter()
-            .map(|chunk| re.replace_all(chunk, "\n\n").to_string())
-            .collect()
-    };
-
-    chunks
 }

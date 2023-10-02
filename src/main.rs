@@ -1,4 +1,6 @@
+mod prompts;
 mod youtube;
+mod openai;
 
 use std::env;
 

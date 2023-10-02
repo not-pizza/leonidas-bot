@@ -3,14 +3,14 @@ pub fn break_text_into_chunks(s: String, max_characters_per_chunk: usize) -> Vec
     let mut current_chunk = String::new();
 
     let paragraphs = s
-        .split("\n")
+        .split('\n')
         .map(|paragraph| paragraph.trim())
         .intersperse("\n\n")
         .flat_map(|paragraph| {
             if paragraph.chars().count() <= max_characters_per_chunk {
                 vec![paragraph]
             } else {
-                paragraph.split(" ").collect::<Vec<_>>()
+                paragraph.split(' ').collect::<Vec<_>>()
             }
         })
         .collect::<Vec<_>>();
@@ -25,7 +25,7 @@ pub fn break_text_into_chunks(s: String, max_characters_per_chunk: usize) -> Vec
         }
 
         // If we can add the current paragraph to the current chunk, do so
-        current_chunk.push_str(&paragraph);
+        current_chunk.push_str(paragraph);
     }
     chunks.push(current_chunk);
 

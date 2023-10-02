@@ -27,7 +27,7 @@ pub struct ChatMessageContent {
     pub content: String,
 }
 
-pub fn count_tokens(chat: &Vec<ChatMessage>) -> usize {
+pub fn count_tokens(chat: &[ChatMessage]) -> usize {
     use tiktoken_rs::{get_chat_completion_max_tokens, ChatCompletionRequestMessage};
     let messages = chat
         .iter()
@@ -39,4 +39,3 @@ pub fn count_tokens(chat: &Vec<ChatMessage>) -> usize {
         .collect::<Vec<_>>();
     get_chat_completion_max_tokens("gpt-4", &messages).unwrap()
 }
-

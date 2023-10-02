@@ -54,10 +54,6 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
-        enum Action {
-            Transcribe,
-            Summarize,
-        }
         if reaction
             .member
             .as_ref()

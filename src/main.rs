@@ -1,6 +1,8 @@
+#![feature(iter_intersperse)]
+
+mod openai;
 mod prompts;
 mod youtube;
-mod openai;
 
 use std::env;
 
@@ -43,18 +45,27 @@ impl EventHandler for Handler {
                 let typing = msg.channel_id.start_typing(&ctx.http);
                 match youtube::get_video_summary(&video_id).await {
                     Ok((summary, info)) => {
-                        if let Err(why) = msg
-                            .channel_id
-                            .send_message(&ctx.http, |m| {
-                                m.embed(|e| {
-                                    e.title(info.title)
-                                        .description(summary)
-                                        .footer(|f| f.text(info.channel_name))
+                        let summary_chunks = break_text_into_chunks(summary, 4096);
+                        let num_chunks = summary_chunks.len();
+                        for (index, summary_chunk) in summary_chunks.into_iter().enumerate() {
+                            let part = if num_chunks != 1 {
+                                format!(" (part {}/{})", index + 1, num_chunks)
+                            } else {
+                                String::new()
+                            };
+                            if let Err(why) = msg
+                                .channel_id
+                                .send_message(&ctx.http, |m| {
+                                    m.embed(|e| {
+                                        e.title(format!("{}{part}", info.title.clone()))
+                                            .description(summary_chunk)
+                                            .footer(|f| f.text(info.channel_name.clone()))
+                                    })
                                 })
-                            })
-                            .await
-                        {
-                            println!("Error sending message: {:?}", why);
+                                .await
+                            {
+                                println!("Error sending message: {:?}", why);
+                            }
                         }
                     }
                     Err(why) => {
@@ -118,4 +129,47 @@ async fn main() {
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
     }
+}
+
+fn break_text_into_chunks(s: String, max_characters_per_chunk: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+
+    let paragraphs = s
+        .split("\n")
+        .map(|paragraph| paragraph.trim())
+        .intersperse("\n\n")
+        .flat_map(|paragraph| {
+            if paragraph.chars().count() <= max_characters_per_chunk {
+                vec![paragraph]
+            } else {
+                paragraph.split(" ").collect::<Vec<_>>()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for paragraph in paragraphs {
+        // If we can't add the current paragraph to the current chunk, push the current chunk and start a new one
+        if !current_chunk.is_empty()
+            && current_chunk.chars().count() + paragraph.chars().count() > max_characters_per_chunk
+        {
+            chunks.push(current_chunk.trim().to_string());
+            current_chunk = String::new();
+        }
+
+        // If we can add the current paragraph to the current chunk, do so
+        current_chunk.push_str(&paragraph);
+    }
+    chunks.push(current_chunk);
+
+    // Use regular expressions to find groups of newlines, and replace them all with 2 newlines
+    chunks = {
+        let re = regex::Regex::new(r"\n{3,}").unwrap();
+        chunks
+            .iter()
+            .map(|chunk| re.replace_all(chunk, "\n\n").to_string())
+            .collect()
+    };
+
+    chunks
 }

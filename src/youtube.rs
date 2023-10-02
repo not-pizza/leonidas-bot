@@ -144,15 +144,14 @@ async fn summarize(
     title: Option<String>,
     channel_name: Option<String>,
 ) -> Result<String, String> {
-    let messages = prompts::summarize(raw_transcript, title, channel_name)?;
+    let (messages, tokens) = prompts::summarize(raw_transcript, title, channel_name)?;
 
-    let chat_tokens = openai::count_tokens(messages.clone());
-    let model = if chat_tokens > 13000 {
+    let model = if tokens > 13_000 {
         return Err(format!(
             "Transcript too long to summarize. ({} tokens)",
-            chat_tokens
+            tokens
         ));
-    } else if chat_tokens < 3000 {
+    } else if tokens < 3_000 {
         "gpt-4"
     } else {
         "gpt-3.5-turbo-16k"
@@ -163,19 +162,41 @@ async fn summarize(
     chat(chat_api_request).await
 }
 
+async fn clean_transcript(
+    raw_transcript: String,
+    title: Option<String>,
+    channel_name: Option<String>,
+) -> Result<String, String> {
+    let (messages_set, tokens) = prompts::clean_transcript(raw_transcript, title, channel_name)?;
+
+    let model = if tokens > 100_000 {
+        return Err(format!(
+            "Transcript too long to clean up. ({} tokens)",
+            tokens
+        ));
+    } else {
+        "gpt-3.5-turbo-16k"
+    };
+
+    let mut transcript = Vec::new();
+
+    for messages in messages_set {
+        let chat_api_request = openai::ChatApiRequest { model, messages };
+        let response = chat(chat_api_request).await?;
+        transcript.push(response);
+    }
+
+    Ok(transcript.join(" "))
+}
+
 pub async fn get_video_summary(video_id: &str) -> Result<(String, VideoInfo), String> {
     let info = get_video_info(video_id).await.map_err(|e| e.to_string())?;
     let transcript = get_transcript(video_id).await?;
-    let summary = summarize(
+    let summary = clean_transcript(
         transcript,
         Some(info.title.clone()),
         Some(info.channel_name.clone()),
     )
     .await?;
-    let clipped_summary = if summary.len() > 4096 {
-        format!("{}...", summary.chars().take(4093).collect::<String>())
-    } else {
-        summary
-    };
-    Ok((clipped_summary, info))
+    Ok((summary, info))
 }

@@ -186,7 +186,9 @@ async fn clean_transcript(
         transcript.push(response);
     }
 
-    Ok(transcript.join(" "))
+    let transcript = transcript.join(" ").replace(". ", ".\n\n");
+
+    Ok(transcript)
 }
 
 pub async fn get_video_transcript(video_id: &str) -> Result<(String, VideoInfo), String> {

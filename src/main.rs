@@ -29,7 +29,7 @@ impl EventHandler for Handler {
             return;
         }
 
-        let video_ids = video_ids_for_message(&msg);
+        let video_ids = video_ids_for_message(&msg.content);
 
         if !video_ids.is_empty() {
             // Sending a message can fail, due to a network error, an
@@ -50,6 +50,14 @@ impl EventHandler for Handler {
             )
             .await
             .unwrap();
+        }
+
+        let twitter_links = twitter_links_for_message(&msg.content);
+        for twitter_link in twitter_links {
+            let message = CreateMessage::new().content(twitter_link);
+            if let Err(why) = msg.channel_id.send_message(&ctx.http, message).await {
+                println!("Error sending message: {:?}", why);
+            }
         }
     }
 
@@ -93,12 +101,28 @@ fn discord_token() -> Option<String> {
     None
 }
 
-fn video_ids_for_message(msg: &Message) -> Vec<String> {
+fn video_ids_for_message(msg: &str) -> Vec<String> {
     LinkFinder::new()
-        .links(&msg.content)
+        .links(msg)
         .filter(|link| link.kind() == &LinkKind::Url)
         // get the ids of youtube videos linked in the message
         .filter_map(|url| youtube::video_id(url.as_str()))
+        .collect()
+}
+
+fn twitter_links_for_message(msg: &str) -> Vec<String> {
+    LinkFinder::new()
+        .links(msg)
+        .filter(|link| link.kind() == &LinkKind::Url)
+        // get the ids of youtube videos linked in the message
+        .filter_map(
+            |url| match url.as_str().split(".com/").collect::<Vec<_>>().as_slice() {
+                ["https://twitter", rest] | ["https://x", rest] => {
+                    Some(format!("https://fxtwitter.com/{}", rest))
+                }
+                _ => None,
+            },
+        )
         .collect()
 }
 
@@ -129,7 +153,7 @@ async fn send_video_description(
 }
 
 async fn summarize_videos(ctx: Context, msg: &Message) {
-    let video_ids = video_ids_for_message(msg);
+    let video_ids = video_ids_for_message(&msg.content);
     for video_id in video_ids {
         let typing = msg.channel_id.start_typing(&ctx.http);
         match youtube::get_video_summary(&video_id).await {
@@ -151,7 +175,7 @@ async fn summarize_videos(ctx: Context, msg: &Message) {
 }
 
 async fn transcribe_videos(ctx: Context, msg: &Message) {
-    let video_ids = video_ids_for_message(msg);
+    let video_ids = video_ids_for_message(&msg.content);
     for video_id in video_ids {
         let typing = msg.channel_id.start_typing(&ctx.http);
         match youtube::get_video_transcript(&video_id).await {
@@ -199,4 +223,14 @@ async fn main() {
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
     }
+}
+
+#[test]
+fn test_twitter_links_for_message() {
+    assert_eq!(
+        twitter_links_for_message(
+            "blah blah https://twitter.com/nytimes/status/1715113106312155502 blah blah"
+        ),
+        vec!["https://fxtwitter.com/nytimes/status/1715113106312155502"]
+    );
 }

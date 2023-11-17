@@ -73,7 +73,7 @@ pub(crate) fn clean_transcript(
         }
     }
 
-    const MAX_TOKENS_PER_INVOCATION: usize = 12_000;
+    const MAX_TOKENS_PER_INVOCATION: usize = 50_000;
 
     let first_try =
         clean_transcript_one_prompt(raw_transcript.clone(), title.clone(), channel_name.clone());

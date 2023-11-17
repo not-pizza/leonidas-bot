@@ -146,15 +146,13 @@ async fn summarize(
 ) -> Result<String, String> {
     let (messages, tokens) = prompts::summarize(raw_transcript, title, channel_name)?;
 
-    let model = if tokens > 10_000 {
+    let model = if tokens > 75_000 {
         return Err(format!(
             "Transcript too long to summarize. ({} tokens)",
             tokens
         ));
-    } else if tokens < 3_000 {
-        "gpt-4"
     } else {
-        "gpt-3.5-turbo-16k"
+        "gpt-4-1106-preview"
     };
 
     let chat_api_request = openai::ChatApiRequest { model, messages };
@@ -169,13 +167,13 @@ async fn clean_transcript(
 ) -> Result<String, String> {
     let (messages_set, tokens) = prompts::clean_transcript(raw_transcript, title, channel_name)?;
 
-    let model = if tokens > 100_000 {
+    let model = if tokens > 75_000 {
         return Err(format!(
             "Transcript too long to clean up. ({} tokens)",
             tokens
         ));
     } else {
-        "gpt-3.5-turbo-16k"
+        "gpt-4-1106-preview"
     };
 
     let mut transcript = Vec::new();

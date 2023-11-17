@@ -24,7 +24,7 @@ fn openai_token() -> Option<String> {
 }
 
 pub fn video_id(url: &str) -> Option<String> {
-    regex::Regex::new(r"(?:https://www\.youtube\.com/watch\?v=|https://youtu\.be/|https://www.youtube.com/shorts/)(?P<id>[a-zA-Z0-9_-]+).*")
+    regex::Regex::new(r"(?:https://(?:(?:www|m)\.)?youtube\.com/watch\?v=|https://youtu\.be/|https://(?:www|m).youtube.com/shorts/)(?P<id>[a-zA-Z0-9_-]+).*")
                     .unwrap()
                     .captures(url)
                     .and_then(|captures| captures.name("id"))

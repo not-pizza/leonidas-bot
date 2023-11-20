@@ -11,7 +11,7 @@ pub(crate) fn summarize(
             "Transcript too short to summarize. ({words} words in transcript)"
         ));
     }
-    let goal_length = (words / 5).max(2000);
+    let goal_length = (words / 5).min(2000);
 
     let messages = vec![
         openai::ChatMessage {

@@ -146,7 +146,7 @@ async fn summarize(
 ) -> Result<String, String> {
     let (messages, tokens) = prompts::summarize(raw_transcript, title, channel_name)?;
 
-    let model = if tokens > 75_000 {
+    let model = if tokens > 50_000 {
         return Err(format!(
             "Transcript too long to summarize. ({} tokens)",
             tokens
@@ -165,9 +165,10 @@ async fn clean_transcript(
     title: Option<String>,
     channel_name: Option<String>,
 ) -> Result<String, String> {
-    let (messages_set, tokens) = prompts::clean_transcript(raw_transcript, title, channel_name)?;
+    let (messages_set, tokens) =
+        prompts::clean_transcript_one_prompt(raw_transcript, title, channel_name);
 
-    let model = if tokens > 75_000 {
+    let model = if tokens > 50_000 {
         return Err(format!(
             "Transcript too long to clean up. ({} tokens)",
             tokens

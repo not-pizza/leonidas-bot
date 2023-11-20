@@ -121,7 +121,9 @@ async fn chat(chat_api_request: openai::ChatApiRequest) -> Result<String, String
             .await
             .map_err(|e| e.to_string())?;
 
-        let data: openai::ChatApiResponse = api_response.json().await.map_err(|e| e.to_string())?;
+        let text = api_response.text().await.map_err(|e| e.to_string())?;
+        let data = serde_json::from_str::<openai::ChatApiResponse>(&text)
+            .map_err(|e| format!("deserialization of `{text:?}` failed: {}", e.to_string()))?;
 
         if let Some(first_choice) = data.choices.get(0) {
             Ok(first_choice.message.content.clone())
@@ -165,7 +167,7 @@ async fn clean_transcript(
     title: Option<String>,
     channel_name: Option<String>,
 ) -> Result<String, String> {
-    let (messages_set, tokens) =
+    let (messages, tokens) =
         prompts::clean_transcript_one_prompt(raw_transcript, title, channel_name);
 
     let model = if tokens > 50_000 {
@@ -177,15 +179,10 @@ async fn clean_transcript(
         "gpt-4-1106-preview"
     };
 
-    let mut transcript = Vec::new();
+    let chat_api_request = openai::ChatApiRequest { model, messages };
+    let transcript = chat(chat_api_request).await?;
 
-    for messages in messages_set {
-        let chat_api_request = openai::ChatApiRequest { model, messages };
-        let response = chat(chat_api_request).await?;
-        transcript.push(response);
-    }
-
-    let transcript = transcript.join(" ").replace(". ", ".\n\n");
+    let transcript = transcript.replace(". ", ".\n\n");
 
     Ok(transcript)
 }
